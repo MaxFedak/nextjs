@@ -2,26 +2,31 @@ import Link from 'next/link';
 import NavLinks from '@/app/ui/dashboard/nav-links';
 import AcmeLogo from '@/app/ui/acme-logo';
 import { PowerIcon } from '@heroicons/react/24/outline';
+import { Button } from '@/app/ui/button';
 
 export default function SideNav() {
   return (
-    <div className="flex h-full flex-col px-3 py-4 md:px-2">
-      <Link
-        className="mb-2 flex h-20 items-end justify-start rounded-md bg-blue-600 p-4 md:h-40"
-        href="/"
-      >
-        <div className="w-32 text-white md:w-40">
-          <AcmeLogo />
+    <div className="flex h-full flex-col p-3 md:p-2">
+      <div className="mb-3 rounded-2xl border border-white/20 bg-white/10 p-4 shadow-sm backdrop-blur-md">
+        <Link href="/" className="flex items-center gap-3">
+          <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-fuchsia-500 text-white shadow">
+            <span className="text-sm font-bold">AC</span>
+          </div>
+          <div className="w-28 text-slate-900 md:w-36">
+            <AcmeLogo />
+          </div>
+        </Link>
+      </div>
+      <div className="flex grow flex-row justify-between gap-2 md:flex-col md:gap-2">
+        <div className="rounded-2xl border border-white/20 bg-white/50 p-2 shadow-sm backdrop-blur">
+          <NavLinks />
         </div>
-      </Link>
-      <div className="flex grow flex-row justify-between space-x-2 md:flex-col md:space-x-0 md:space-y-2">
-        <NavLinks />
-        <div className="hidden h-auto w-full grow rounded-md bg-gray-50 md:block"></div>
-        <form>
-          <button className="flex h-[48px] w-full grow items-center justify-center gap-2 rounded-md bg-gray-50 p-3 text-sm font-medium hover:bg-sky-100 hover:text-blue-600 md:flex-none md:justify-start md:p-2 md:px-3">
-            <PowerIcon className="w-6" />
-            <div className="hidden md:block">Sign Out</div>
-          </button>
+        <div className="hidden h-auto w-full grow rounded-2xl border border-white/20 bg-white/30 shadow-sm backdrop-blur md:block" />
+        <form className="md:mt-auto">
+          <Button variant="ghost" className="w-full justify-start rounded-xl">
+            <PowerIcon className="h-5 w-5 text-slate-600" />
+            <span className="hidden md:inline">Sign Out</span>
+          </Button>
         </form>
       </div>
     </div>
