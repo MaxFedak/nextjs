@@ -1,0 +1,9 @@
+{
+  "name": "feature-docs",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@notionhq/client": "^2.2.14",
+    "openai": "^4.58.1"
+  }
+}
