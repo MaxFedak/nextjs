@@ -16,3 +16,28 @@ input[type='number']::-webkit-outer-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }
+
+/* App-wide visual theme tweaks for the study project */
+@layer base {
+  html, body {
+    height: 100%;
+  }
+  body {
+    /* Soft layered gradient background to clearly differ from default */
+    background-image:
+      radial-gradient(1200px 600px at 100% -10%, rgba(99, 102, 241, 0.20), transparent 60%),
+      radial-gradient(1000px 500px at -10% 10%, rgba(217, 70, 239, 0.18), transparent 60%),
+      linear-gradient(180deg, #f7f7fb 0%, #f9fafb 100%);
+    background-attachment: fixed;
+  }
+
+  ::selection {
+    background: rgb(129 140 248 / 0.25);
+  }
+}
+
+@layer components {
+  .card-surface {
+    @apply rounded-2xl border border-slate-200/70 bg-white/90 shadow-sm backdrop-blur;
+  }
+}

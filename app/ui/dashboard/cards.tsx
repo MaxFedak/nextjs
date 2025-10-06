@@ -14,19 +14,14 @@ const iconMap = {
 };
 
 export default async function CardWrapper() {
+  // Use static demo values to highlight the refreshed visuals
   return (
-    <>
-      {/* NOTE: Uncomment this code in Chapter 9 */}
-
-      {/* <Card title="Collected" value={totalPaidInvoices} type="collected" />
-      <Card title="Pending" value={totalPendingInvoices} type="pending" />
-      <Card title="Total Invoices" value={numberOfInvoices} type="invoices" />
-      <Card
-        title="Total Customers"
-        value={numberOfCustomers}
-        type="customers"
-      /> */}
-    </>
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <Card title="Collected" value="$24,800" type="collected" />
+      <Card title="Pending" value="$6,120" type="pending" />
+      <Card title="Total Invoices" value={128} type="invoices" />
+      <Card title="Total Customers" value={42} type="customers" />
+    </div>
   );
 }
 
@@ -41,15 +36,25 @@ export function Card({
 }) {
   const Icon = iconMap[type];
 
+  const accent =
+    type === 'collected'
+      ? 'from-emerald-500 to-teal-500'
+      : type === 'pending'
+      ? 'from-amber-500 to-orange-500'
+      : type === 'invoices'
+      ? 'from-indigo-500 to-blue-500'
+      : 'from-fuchsia-500 to-pink-500';
+
   return (
-    <div className="rounded-xl bg-gray-50 p-2 shadow-sm">
-      <div className="flex p-4">
-        {Icon ? <Icon className="h-5 w-5 text-gray-700" /> : null}
-        <h3 className="ml-2 text-sm font-medium">{title}</h3>
+    <div className="card-surface p-3">
+      <div className="flex items-center gap-3 p-3">
+        <div className={`inline-flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br ${accent} text-white`}>
+          {Icon ? <Icon className="h-5 w-5" /> : null}
+        </div>
+        <h3 className="text-sm font-medium text-slate-700">{title}</h3>
       </div>
       <p
-        className={`${lusitana.className}
-          truncate rounded-xl bg-white px-4 py-8 text-center text-2xl`}
+        className={`${lusitana.className} truncate rounded-xl bg-white/90 px-4 py-6 text-center text-3xl text-slate-900`}
       >
         {value}
       </p>

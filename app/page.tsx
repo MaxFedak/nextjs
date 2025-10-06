@@ -1,51 +1,53 @@
 import AcmeLogo from '@/app/ui/acme-logo';
 import { ArrowRightIcon } from '@heroicons/react/24/outline';
 import Link from 'next/link';
-import {lusitana} from "@/app/ui/fonts";
-import Image from "next/image";
+import { lusitana } from '@/app/ui/fonts';
+import { Button } from '@/app/ui/button';
 
 export default function Page() {
   return (
-    <main className="flex min-h-screen flex-col p-6">
-      <div className="flex h-20 shrink-0 items-end rounded-lg bg-blue-500 p-4 md:h-52">
-         <AcmeLogo />
-      </div>
-      <div className="mt-4 flex grow flex-col gap-4 md:flex-row">
-        <div className="flex flex-col justify-center gap-6 rounded-lg bg-gray-50 px-6 py-10 md:w-2/5 md:px-20">
-          <div
-              className="relative w-0 h-0 border-l-[15px] border-r-[15px] border-b-[26px] border-l-transparent border-r-transparent border-b-black"
-          />
-          <p className={`${lusitana.className} antialiased text-xl text-gray-800 md:text-3xl md:leading-normal`}>
-            <strong>Welcome to Acme.</strong> This is the example for the{' '}
-            <a href="https://nextjs.org/learn/" className="text-blue-500">
-              Next.js Learn Course
-            </a>
-            , brought to you by Vercel.
-          </p>
-          <Link
-            href="/login"
-            className="flex items-center gap-5 self-start rounded-lg bg-blue-500 px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-blue-400 md:text-base"
-          >
-            <span>Log in</span> <ArrowRightIcon className="w-5 md:w-6" />
+    <main className="relative mx-auto flex min-h-screen w-full max-w-7xl flex-col p-6">
+      <div className="mb-8 flex items-center justify-between">
+        <div className="h-10 w-32 text-slate-900 md:w-40">
+          <AcmeLogo />
+        </div>
+        <div className="hidden md:block">
+          <Link href="/login">
+            <Button variant="secondary" size="sm">Log in</Button>
           </Link>
         </div>
-        <div className="flex items-center justify-center p-5 md:w-3/5 md:px-28 md:py-12">
-            <Image
-                src="/hero-desktop.png"
-                width={1000}
-                height={760}
-                className="hidden md:block"
-                alt="Screenshots of the dashboard project showing desktop version"
-            />
-            <Image
-                src="/hero-mobile.png"
-                width={560}
-                height={620}
-                className="block md:hidden"
-                alt="Screenshot of the dashboard project showing mobile version"
-            />
-        </div>
       </div>
+
+      <section className="relative grid grow grid-cols-1 items-center gap-8 md:grid-cols-2">
+        <div className="card-surface order-2 rounded-3xl p-8 md:order-1 md:p-12">
+          <h1 className={`${lusitana.className} text-3xl font-semibold tracking-tight text-slate-900 md:text-5xl`}>
+            Autodoc Playground
+          </h1>
+          <p className="mt-4 max-w-prose text-slate-600 md:text-lg">
+            A deliberately bold UI refresh to help you test automated documentation pipelines. This landing page, navigation, buttons, and dashboard cards have all been overhauled.
+          </p>
+          <div className="mt-6 flex items-center gap-3">
+            <Link href="/dashboard">
+              <Button size="lg" variant="primary" trailingIcon={<ArrowRightIcon className="h-5 w-5" />}>Open Dashboard</Button>
+            </Link>
+            <Link href="/login">
+              <Button size="lg" variant="ghost">Log in</Button>
+            </Link>
+          </div>
+        </div>
+        <div className="order-1 md:order-2">
+          <div className="relative mx-auto aspect-square w-full max-w-md">
+            <div className="absolute inset-0 -rotate-6 rounded-3xl bg-gradient-to-br from-indigo-500 to-fuchsia-500 opacity-90 blur-[2px]" />
+            <div className="absolute inset-0 rotate-3 rounded-3xl bg-white/80 shadow-xl ring-1 ring-slate-200 backdrop-blur" />
+            <div className="relative z-10 flex h-full flex-col items-center justify-center gap-4 p-8">
+              <div className="inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-fuchsia-500 text-white shadow">
+                <span className="text-lg font-bold">AC</span>
+              </div>
+              <p className="max-w-xs text-center text-slate-600">Beautifully minimal components redesigned for demonstration purposes.</p>
+            </div>
+          </div>
+        </div>
+      </section>
     </main>
   );
 }
