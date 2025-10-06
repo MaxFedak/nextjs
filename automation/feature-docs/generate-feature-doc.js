@@ -1,6 +1,8 @@
 // automation/feature-docs/generate-feature-doc.js
+import { Octokit } from "@octokit/rest";
 import OpenAI from "openai";
 import { Client as Notion } from "@notionhq/client";
+import slugify from "slugify";
 
 const {
     OPENAI_API_KEY,
@@ -8,141 +10,207 @@ const {
     NOTION_DB_ID,
     GITHUB_TOKEN,
     REPO_FULL,
-    PR_NUMBER,
+    PR_NUMBER
 } = process.env;
 
-function assertEnv(name) {
-    if (!process.env[name]) {
-        console.error(`❌ Missing env ${name}`);
+for (const k of [
+    "OPENAI_API_KEY", "NOTION_TOKEN", "NOTION_DB_ID",
+    "GITHUB_TOKEN", "REPO_FULL", "PR_NUMBER"
+]) {
+    if (!process.env[k]) {
+        console.error(`❌ Missing env: ${k}`);
         process.exit(1);
     }
 }
-["OPENAI_API_KEY","NOTION_TOKEN","NOTION_DB_ID","GITHUB_TOKEN","REPO_FULL","PR_NUMBER"].forEach(assertEnv);
 
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 const notion = new Notion({ auth: NOTION_TOKEN });
+const octokit = new Octokit({ auth: GITHUB_TOKEN });
 
-// --- helpers ---
-async function gh(path) {
-    const res = await fetch(`https://api.github.com${path}`, {
-        headers: {
-            Authorization: `Bearer ${GITHUB_TOKEN}`,
-            Accept: "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
-    });
-    if (!res.ok) {
-        const body = await res.text();
-        throw new Error(`GitHub ${path} -> ${res.status}\n${body}`);
+/* -------------------------- tiny helpers -------------------------- */
+const yymm = (d = new Date()) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+
+const toSlug = (txt, words = 6) =>
+    slugify(
+        (txt || "feature")
+            .toLowerCase()
+            .replace(/[^a-z0-9\s-]/g, " ")
+            .split(/\s+/)
+            .slice(0, words)
+            .join(" "),
+        { lower: true, strict: true }
+    );
+
+const extractTaskId = (s = "") => {
+    const m = s.match(/\b([A-Z]{2,}-\d+)\b/);
+    return m ? m[1] : "N/A";
+};
+
+const inferAppArea = (labels = [], files = []) => {
+    // Prefer label like "app:billing" or "area:dashboard"
+    const byLabel = labels.find(l => /^app:|^area:/.test(l.name));
+    if (byLabel) return byLabel.name.split(":")[1] || byLabel.name;
+
+    // fallback: top-level folder of most changed files
+    const buckets = {};
+    for (const f of files) {
+        const top = (f.filename || "").split("/")[0];
+        if (!top) continue;
+        buckets[top] = (buckets[top] || 0) + 1;
     }
-    return res.json();
-}
+    const top = Object.entries(buckets).sort((a,b) => b[1]-a[1])[0]?.[0];
+    return top || "general";
+};
 
-function splitParagraphs(md) {
-    // Split on blank lines and chunk paragraphs to fit Notion's limits
-    const paras = md.split(/\r?\n\r?\n/).map(s => s.trim()).filter(Boolean);
-    const chunks = [];
-    for (const p of paras) {
-        let start = 0;
-        const MAX = 1800; // safe under Notion text limits
-        while (start < p.length) {
-            chunks.push(p.slice(start, start + MAX));
-            start += MAX;
+/* --------------------- Notion block builders ---------------------- */
+const txt = (content) => [{ type: "text", text: { content } }];
+
+const paragraph = (content) => ({
+    object: "block",
+    type: "paragraph",
+    paragraph: { rich_text: txt(content) }
+});
+
+const heading = (level, content) => {
+    const type = level === 1 ? "heading_1" : level === 2 ? "heading_2" : "heading_3";
+    return { object: "block", type, [type]: { rich_text: txt(content) } };
+};
+
+const bullet = (content) => ({
+    object: "block",
+    type: "bulleted_list_item",
+    bulleted_list_item: { rich_text: txt(content) }
+});
+
+/** Very small Markdown→Notion mapper for headings/bullets/paragraphs */
+function mdToBlocks(md) {
+    const lines = md.split(/\r?\n/);
+    const blocks = [];
+    let inList = false;
+
+    for (const line of lines) {
+        if (!line.trim()) { inList = false; continue; }
+
+        if (line.startsWith("### ")) {
+            inList = false; blocks.push(heading(3, line.slice(4))); continue;
         }
+        if (line.startsWith("## ")) {
+            inList = false; blocks.push(heading(2, line.slice(3))); continue;
+        }
+        if (line.startsWith("# ")) {
+            inList = false; blocks.push(heading(1, line.slice(2))); continue;
+        }
+        if (/^\s*-\s+/.test(line)) {
+            blocks.push(bullet(line.replace(/^\s*-\s+/, ""))); inList = true; continue;
+        }
+        blocks.push(paragraph(line));
     }
-    return chunks;
+    return blocks;
 }
 
-function mdToNotionBlocks(md) {
-    // Minimal & robust: convert paragraphs (no heavy Markdown parsing yet)
-    return splitParagraphs(md).map(text => ({
-        object: "block",
-        type: "paragraph",
-        paragraph: { rich_text: [{ type: "text", text: { content: text } }] }
-    }));
-}
-
-function extractTicketId(text) {
-    const m = text?.match(/\b([A-Z]{2,}-\d+)\b/);
-    return m ? m[1] : "";
-}
-
+/* ------------------------------- main ----------------------------- */
 async function main() {
     const [owner, repo] = REPO_FULL.split("/");
-    // 1) Pull PR details, commits
-    const pr = await gh(`/repos/${owner}/${repo}/pulls/${PR_NUMBER}`);
-    const commits = await gh(`/repos/${owner}/${repo}/pulls/${PR_NUMBER}/commits`);
-    const commitList = commits.map(c => `- ${c.commit.message.split("\n")[0]} (${c.sha.slice(0,7)})`).join("\n");
 
-    // 2) Build prompt for hosted LLM (ChatGPT)
+    // 1) Pull PR, commits, files
+    const { data: pr } = await octokit.pulls.get({ owner, repo, pull_number: PR_NUMBER });
+    const { data: commits } = await octokit.pulls.listCommits({ owner, repo, pull_number: PR_NUMBER });
+    const { data: files } = await octokit.pulls.listFiles({ owner, repo, pull_number: PR_NUMBER });
+
+    const commitLines = commits.map(c => `- ${c.commit.message.split("\n")[0]} (${c.sha.slice(0,7)})`).join("\n");
+    const changedFiles = files.map(f => `- ${f.filename}${f.status !== "modified" ? ` (${f.status})` : ""}`).join("\n");
+
+    // 2) Compute metadata for file name + Notion properties
+    const short = toSlug(pr.title, 6);
+    const fileName = `feature-${yymm()}-${short}.md`;
+    const author = pr.user?.login || "unknown";
+    const taskId = extractTaskId(`${pr.title} ${pr.body || ""}`);
+    const appArea = inferAppArea(pr.labels || [], files || []);
+    const project = repo;
+    const prUrl = pr.html_url;
+
+    // 3) Build strict prompt per your spec
     const prompt = `
-Generate internal feature documentation in Markdown with these EXACT headings:
+You are a senior engineer documenting a merged PR. Output MUST follow this exact shape and tone.
+Write concise, accurate, **Markdown**. Avoid hype; do not fabricate metrics. If "Previous State" is not useful, write "N/A".
+
+Top matter (do NOT number):
+File name: ${fileName}
+Author: ${author}
+Task ID: ${taskId}
+App Area: ${appArea}
+Project: ${project}
+
+Now the 6 sections exactly:
 
 1. Previous State
+   - Summarize what existed before these changes — only if context is useful. Otherwise "N/A".
 2. Why This Change Was Needed
+   - Based on commit messages and PR description, clearly state the problem/motivation.
 3. Decision and Reasoning
+   - Explain why this solution was chosen. Mention any obvious alternatives and why they were rejected.
 4. What Was Done
+   - Summarize the core of the implementation: new components, hooks, APIs, major refactors; add the PR URL (${prUrl}).
 5. Results
+   - State what was achieved: performance, UX, or reliability improvements, new capabilities, or downstream effects. No fake numbers.
 6. Follow-ups / Next Steps
+   - List remaining TODOs, known limitations, or future improvements.
 
-Rules:
-- Plain, neutral tone. 250–400 words total.
-- Do NOT invent metrics. If unknown, be generic.
-- If previous state isn't clear, put "N/A".
-- Mention the PR URL in "What Was Done".
-
+Useful context:
 PR Title: ${pr.title}
-PR Author: ${pr.user?.login}
-PR URL: ${pr.html_url}
 PR Body:
-${pr.body || "(no description)"}
+${(pr.body || "(no PR description)")}
 
 Commits:
-${commitList || "(no commits read?)"}
+${commitLines || "(no commits listed)"}
 
-Likely ticket ID (if present): ${extractTicketId((pr.title || "") + " " + (pr.body || ""))}
+Changed Files:
+${changedFiles || "(no file list)"} 
 `.trim();
 
+    // 4) Ask the hosted LLM
     const ai = await openai.chat.completions.create({
         model: "gpt-4o",
+        temperature: 0.2,
         messages: [
-            { role: "system", content: "You generate precise, audit-friendly engineering docs." },
+            { role: "system", content: "You generate precise, audit-friendly engineering documentation in Markdown." },
             { role: "user", content: prompt }
-        ],
-        temperature: 0.2
+        ]
     });
 
     const md = ai.choices?.[0]?.message?.content?.trim();
     if (!md) throw new Error("Empty LLM response.");
 
-    // 3) Read DB schema to locate Title prop and optional props
+    // 5) Prepare Notion payload
+    //    - Fill properties if they exist; always set Title to fileName
     const db = await notion.databases.retrieve({ database_id: NOTION_DB_ID });
     const props = db.properties || {};
     const titleKey = Object.keys(props).find(k => props[k]?.type === "title");
     if (!titleKey) throw new Error("Could not find Title property in Notion database.");
 
-    const hasAuthor = !!props["Author"];
-    const hasPrUrl  = !!props["PR URL"];
-    const hasTaskId = !!props["Task ID"];
-    const hasProject= !!props["Project"];
-
+    const maybe = (name, valueBuilder) => (props[name] ? { [name]: valueBuilder() } : {});
     const properties = {
-        [titleKey]: { title: [{ text: { content: `feature-${new Date().toISOString().slice(0,7)}-${pr.title}` } }] }
+        [titleKey]: { title: [{ text: { content: fileName } }] },
+        ...maybe("Author", () => ({ rich_text: [{ type: "text", text: { content: author } }] })),
+        ...maybe("Task ID", () => ({ rich_text: [{ type: "text", text: { content: taskId } }] })),
+        ...maybe("App Area", () => ({ rich_text: [{ type: "text", text: { content: appArea } }] })),
+        ...maybe("Project", () => ({ rich_text: [{ type: "text", text: { content: project } }] })),
+        ...maybe("PR URL", () => ({ url: prUrl })),
+        ...maybe("Created At", () => ({ date: { start: new Date().toISOString() } }))
     };
-    if (hasAuthor) properties["Author"] = { rich_text: [{ type: "text", text: { content: pr.user?.login || "" } }] };
-    if (hasPrUrl)  properties["PR URL"] = { url: pr.html_url };
-    if (hasTaskId) properties["Task ID"] = { rich_text: [{ type: "text", text: { content: extractTicketId(pr.title + " " + (pr.body||"")) } }] };
-    if (hasProject)properties["Project"] = { rich_text: [{ type: "text", text: { content: repo } }] };
 
-    // 4) Create page
-    const page = await notion.pages.create({
+    const children = mdToBlocks(md);
+
+    // 6) Create Notion page
+    const created = await notion.pages.create({
         parent: { database_id: NOTION_DB_ID },
         properties,
-        children: mdToNotionBlocks(md)
+        children
     });
 
-    console.log("✅ Notion page created:", page.id);
-    console.log("🔗 Open:", `https://www.notion.so/${page.id.replace(/-/g, "")}`);
+    console.log("✅ Notion page created:", created.id);
+    console.log("🔗 Open:", `https://www.notion.so/${created.id.replace(/-/g, "")}`);
 }
 
 main().catch(err => {

@@ -4,6 +4,8 @@
   "type": "module",
   "dependencies": {
     "@notionhq/client": "^2.2.14",
-    "openai": "^4.58.1"
+    "@octokit/rest": "^20.1.1",
+    "openai": "^4.58.1",
+    "slugify": "^1.6.6"
   }
 }
